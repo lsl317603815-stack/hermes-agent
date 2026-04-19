@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git fetch:*)",
+      "Bash(git remote:*)",
+      "Bash(git stash list:*)",
+      "Bash(git ls-files:*)",
+      "Bash(python -m pytest tests/*)",
+      "Bash(pip show:*)",
+      "Bash(pip list:*)",
+      "Bash(hermes --help)",
+      "Bash(hermes doctor)"
+    ],
+    "deny": [
+      "Bash(git push upstream:*)",
+      "Bash(git push --force origin main:*)",
+      "Bash(git push -f origin main:*)",
+      "Bash(rm -rf:*)"
+    ]
+  }
+}
