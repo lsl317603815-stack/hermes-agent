@@ -49,13 +49,43 @@ def pid_alive(pid: int, *, treat_permission_as_alive: bool = False) -> bool:
         import ctypes
         PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
         ERROR_ACCESS_DENIED = 5
+        STILL_ACTIVE = 259
         kernel32 = ctypes.windll.kernel32
+        # Pin argtypes/restype so 64-bit HANDLE marshalling is correct.
+        # The default c_int restype truncates HANDLEs — benign for
+        # truthiness tests but breaks GetExitCodeProcess below.  Safe to
+        # reassign: idempotent, and other in-process callers (browser
+        # daemon reaper) only use truthiness + CloseHandle, both
+        # c_void_p-compatible.
+        kernel32.OpenProcess.argtypes = [ctypes.c_uint, ctypes.c_int, ctypes.c_uint]
+        kernel32.OpenProcess.restype = ctypes.c_void_p
+        kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+        kernel32.CloseHandle.restype = ctypes.c_int
+        kernel32.GetExitCodeProcess.argtypes = [
+            ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint)
+        ]
+        kernel32.GetExitCodeProcess.restype = ctypes.c_int
         handle = kernel32.OpenProcess(
             PROCESS_QUERY_LIMITED_INFORMATION, False, pid
         )
         if handle:
-            kernel32.CloseHandle(handle)
-            return True
+            try:
+                # A Process kernel object can outlive the actual process
+                # whenever another process still holds a HANDLE to it
+                # (e.g. a parent shell retaining child handles after
+                # Ctrl+C).  OpenProcess succeeds on such zombies, so
+                # confirm true liveness via GetExitCodeProcess:
+                # STILL_ACTIVE (259) only for genuinely running
+                # processes; any other value is the real exit code of
+                # the already-exited process.
+                exit_code = ctypes.c_uint()
+                if kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                    return exit_code.value == STILL_ACTIVE
+                # Query failed while the kobj is open — fail safe toward
+                # "alive" rather than risk reaping a live gateway.
+                return True
+            finally:
+                kernel32.CloseHandle(handle)
         if treat_permission_as_alive and kernel32.GetLastError() == ERROR_ACCESS_DENIED:
             return True
         return False
