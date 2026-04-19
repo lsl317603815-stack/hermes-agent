@@ -574,11 +574,25 @@ def get_running_pid(
         _cleanup_invalid_pid_path(resolved_pid_path, cleanup_stale=cleanup_stale)
         return None
 
-    try:
-        os.kill(pid, 0)  # signal 0 = existence check, no actual signal sent
-    except (ProcessLookupError, PermissionError):
-        _cleanup_invalid_pid_path(resolved_pid_path, cleanup_stale=cleanup_stale)
-        return None
+    # os.kill(pid, 0) is the POSIX existence-check idiom but raises
+    # WinError 87 (invalid parameter) on native Windows because Python's
+    # os.kill on Windows only accepts CTRL_C_EVENT/CTRL_BREAK_EVENT.
+    if sys.platform == "win32":
+        import ctypes
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        handle = ctypes.windll.kernel32.OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+        )
+        if not handle:
+            _cleanup_invalid_pid_path(resolved_pid_path, cleanup_stale=cleanup_stale)
+            return None
+        ctypes.windll.kernel32.CloseHandle(handle)
+    else:
+        try:
+            os.kill(pid, 0)  # signal 0 = existence check, no actual signal sent
+        except (ProcessLookupError, PermissionError):
+            _cleanup_invalid_pid_path(resolved_pid_path, cleanup_stale=cleanup_stale)
+            return None
 
     recorded_start = record.get("start_time")
     current_start = _get_process_start_time(pid)
