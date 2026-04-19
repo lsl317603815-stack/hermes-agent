@@ -651,11 +651,10 @@ def _stop_gateway_process(profile_dir: Path) -> None:
         pid = int(data["pid"])
         os.kill(pid, _signal.SIGTERM)
         # Wait up to 10s for graceful shutdown
+        from gateway.status import pid_alive
         for _ in range(20):
             _time.sleep(0.5)
-            try:
-                os.kill(pid, 0)
-            except ProcessLookupError:
+            if not pid_alive(pid):
                 print(f"✓ Gateway stopped (PID {pid})")
                 return
         # Force kill

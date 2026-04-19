@@ -29,31 +29,42 @@ _IS_WINDOWS = sys.platform == "win32"
 _UNSET = object()
 
 
-def pid_alive(pid: int) -> bool:
+def pid_alive(pid: int, *, treat_permission_as_alive: bool = False) -> bool:
     """Return True if *pid* is a live process.
 
     Cross-platform existence probe. On POSIX uses the classic
     ``os.kill(pid, 0)`` idiom; on native Windows uses ctypes
     ``OpenProcess`` because Python's Windows ``os.kill`` only accepts
     ``CTRL_C_EVENT`` / ``CTRL_BREAK_EVENT`` and raises ``WinError 87`` for
-    signal 0. PermissionError on POSIX is treated as "not alive" to
-    preserve pre-existing call-site semantics (treat inaccessible PIDs as
-    stale so takeover paths can reclaim the slot).
+    signal 0.
+
+    ``treat_permission_as_alive``: when False (default), an inaccessible
+    PID (POSIX ``PermissionError`` / Windows ``ERROR_ACCESS_DENIED``) is
+    reported as not-alive — matches the original gateway pidfile cleanup
+    semantics. When True, inaccessible PIDs are reported as alive — used
+    by call sites that must not reap another user's process (e.g.
+    browser-session ownership checks).
     """
     if _IS_WINDOWS:
         import ctypes
         PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-        handle = ctypes.windll.kernel32.OpenProcess(
+        ERROR_ACCESS_DENIED = 5
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(
             PROCESS_QUERY_LIMITED_INFORMATION, False, pid
         )
-        if not handle:
-            return False
-        ctypes.windll.kernel32.CloseHandle(handle)
-        return True
+        if handle:
+            kernel32.CloseHandle(handle)
+            return True
+        if treat_permission_as_alive and kernel32.GetLastError() == ERROR_ACCESS_DENIED:
+            return True
+        return False
     try:
         os.kill(pid, 0)
-    except (ProcessLookupError, PermissionError):
+    except ProcessLookupError:
         return False
+    except PermissionError:
+        return treat_permission_as_alive
     return True
 
 

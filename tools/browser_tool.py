@@ -608,15 +608,10 @@ def _reap_orphaned_browser_sessions():
         if os.path.isfile(owner_pid_file):
             try:
                 owner_pid = int(Path(owner_pid_file).read_text().strip())
-                try:
-                    os.kill(owner_pid, 0)
-                    owner_alive = True
-                except ProcessLookupError:
-                    owner_alive = False
-                except PermissionError:
-                    # Owner exists but we can't signal it (different uid).
-                    # Treat as alive — don't reap someone else's session.
-                    owner_alive = True
+                from gateway.status import pid_alive as _pid_alive
+                # PermissionError → treat as alive to avoid reaping another
+                # user's session (matches prior POSIX try/except behavior).
+                owner_alive = _pid_alive(owner_pid, treat_permission_as_alive=True)
             except (ValueError, OSError):
                 owner_alive = None  # corrupt file — fall through
 
@@ -643,16 +638,32 @@ def _reap_orphaned_browser_sessions():
             shutil.rmtree(socket_dir, ignore_errors=True)
             continue
 
-        # Check if the daemon is still alive
-        try:
-            os.kill(daemon_pid, 0)  # signal 0 = existence check
-        except ProcessLookupError:
-            # Already dead, just clean up the dir
-            shutil.rmtree(socket_dir, ignore_errors=True)
-            continue
-        except PermissionError:
-            # Alive but owned by someone else — leave it alone
-            continue
+        # Check if the daemon is still alive.
+        # Tri-state: alive → reap; dead → cleanup dir; inaccessible → skip.
+        # pid_alive() is binary so we inline the Windows branch here.
+        if sys.platform == "win32":
+            import ctypes as _ctypes
+            _kernel32 = _ctypes.windll.kernel32
+            _h = _kernel32.OpenProcess(0x1000, False, daemon_pid)
+            if _h:
+                _kernel32.CloseHandle(_h)  # alive → fall through to reap
+            elif _kernel32.GetLastError() == 5:  # ERROR_ACCESS_DENIED
+                # Owned by another user — leave it alone
+                continue
+            else:
+                # Already dead, just clean up the dir
+                shutil.rmtree(socket_dir, ignore_errors=True)
+                continue
+        else:
+            try:
+                os.kill(daemon_pid, 0)  # signal 0 = existence check
+            except ProcessLookupError:
+                # Already dead, just clean up the dir
+                shutil.rmtree(socket_dir, ignore_errors=True)
+                continue
+            except PermissionError:
+                # Alive but owned by someone else — leave it alone
+                continue
 
         # Daemon is alive and its owner is dead (or legacy + untracked).  Reap.
         try:
