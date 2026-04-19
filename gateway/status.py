@@ -29,6 +29,34 @@ _IS_WINDOWS = sys.platform == "win32"
 _UNSET = object()
 
 
+def pid_alive(pid: int) -> bool:
+    """Return True if *pid* is a live process.
+
+    Cross-platform existence probe. On POSIX uses the classic
+    ``os.kill(pid, 0)`` idiom; on native Windows uses ctypes
+    ``OpenProcess`` because Python's Windows ``os.kill`` only accepts
+    ``CTRL_C_EVENT`` / ``CTRL_BREAK_EVENT`` and raises ``WinError 87`` for
+    signal 0. PermissionError on POSIX is treated as "not alive" to
+    preserve pre-existing call-site semantics (treat inaccessible PIDs as
+    stale so takeover paths can reclaim the slot).
+    """
+    if _IS_WINDOWS:
+        import ctypes
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        handle = ctypes.windll.kernel32.OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+        )
+        if not handle:
+            return False
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return True
+    try:
+        os.kill(pid, 0)
+    except (ProcessLookupError, PermissionError):
+        return False
+    return True
+
+
 def _get_pid_path() -> Path:
     """Return the path to the gateway PID file, respecting HERMES_HOME."""
     home = get_hermes_home()
@@ -339,9 +367,7 @@ def acquire_scoped_lock(scope: str, identity: str, metadata: Optional[dict[str, 
 
         stale = existing_pid is None
         if not stale:
-            try:
-                os.kill(existing_pid, 0)
-            except (ProcessLookupError, PermissionError):
+            if not pid_alive(existing_pid):
                 stale = True
             else:
                 current_start = _get_process_start_time(existing_pid)
@@ -574,25 +600,9 @@ def get_running_pid(
         _cleanup_invalid_pid_path(resolved_pid_path, cleanup_stale=cleanup_stale)
         return None
 
-    # os.kill(pid, 0) is the POSIX existence-check idiom but raises
-    # WinError 87 (invalid parameter) on native Windows because Python's
-    # os.kill on Windows only accepts CTRL_C_EVENT/CTRL_BREAK_EVENT.
-    if sys.platform == "win32":
-        import ctypes
-        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-        handle = ctypes.windll.kernel32.OpenProcess(
-            PROCESS_QUERY_LIMITED_INFORMATION, False, pid
-        )
-        if not handle:
-            _cleanup_invalid_pid_path(resolved_pid_path, cleanup_stale=cleanup_stale)
-            return None
-        ctypes.windll.kernel32.CloseHandle(handle)
-    else:
-        try:
-            os.kill(pid, 0)  # signal 0 = existence check, no actual signal sent
-        except (ProcessLookupError, PermissionError):
-            _cleanup_invalid_pid_path(resolved_pid_path, cleanup_stale=cleanup_stale)
-            return None
+    if not pid_alive(pid):
+        _cleanup_invalid_pid_path(resolved_pid_path, cleanup_stale=cleanup_stale)
+        return None
 
     recorded_start = record.get("start_time")
     current_start = _get_process_start_time(pid)
