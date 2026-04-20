@@ -64,6 +64,7 @@ from tools.interrupt import is_interrupted, _interrupt_event  # noqa: F401 — r
 
 # Singularity helpers (scratch dir, SIF cache) now live in tools/environments/singularity.py
 from tools.environments.singularity import _get_scratch_dir
+from tools.environments.base import NO_WINDOW_KWARGS
 from tools.tool_backend_helpers import (
     coerce_modal_mode,
     has_direct_modal_credentials,
@@ -1549,13 +1550,13 @@ def check_terminal_requirements() -> bool:
             if not docker:
                 logger.error("Docker executable not found in PATH or common install locations")
                 return False
-            result = subprocess.run([docker, "version"], capture_output=True, timeout=5)
+            result = subprocess.run([docker, "version"], capture_output=True, timeout=5, **NO_WINDOW_KWARGS)
             return result.returncode == 0
 
         elif env_type == "singularity":
             executable = shutil.which("apptainer") or shutil.which("singularity")
             if executable:
-                result = subprocess.run([executable, "--version"], capture_output=True, timeout=5)
+                result = subprocess.run([executable, "--version"], capture_output=True, timeout=5, **NO_WINDOW_KWARGS)
                 return result.returncode == 0
             return False
 

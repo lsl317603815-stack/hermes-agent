@@ -7,7 +7,7 @@ import signal
 import subprocess
 import tempfile
 
-from tools.environments.base import BaseEnvironment, _pipe_stdin
+from tools.environments.base import BaseEnvironment, _pipe_stdin, NO_WINDOW_KWARGS
 
 _IS_WINDOWS = platform.system() == "Windows"
 
@@ -268,6 +268,7 @@ class LocalEnvironment(BaseEnvironment):
             stderr=subprocess.STDOUT,
             stdin=subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL,
             preexec_fn=None if _IS_WINDOWS else os.setsid,
+            **NO_WINDOW_KWARGS,
         )
 
         if stdin_data is not None:

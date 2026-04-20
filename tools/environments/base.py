@@ -9,6 +9,7 @@ or a temp file (local).
 import json
 import logging
 import os
+import platform
 import shlex
 import subprocess
 import threading
@@ -22,6 +23,18 @@ from hermes_constants import get_hermes_home
 from tools.interrupt import is_interrupted
 
 logger = logging.getLogger(__name__)
+
+# Windows: suppress the cmd window that normally flashes when a console-less
+# parent (pythonw.exe) spawns a console subprocess. Other platforms get an
+# empty dict so callers can ``**NO_WINDOW_KWARGS`` unconditionally.
+#
+# CREATE_NO_WINDOW (0x08000000) tells CreateProcess not to allocate a console
+# for the child. stdout/stderr captured via PIPE still work normally; only
+# interactive console UIs in the child would break — we never need those.
+if platform.system() == "Windows":
+    NO_WINDOW_KWARGS = {"creationflags": subprocess.CREATE_NO_WINDOW}
+else:
+    NO_WINDOW_KWARGS: dict = {}
 
 # Opt-in debug tracing for the interrupt/activity/poll machinery.  Set
 # HERMES_DEBUG_INTERRUPT=1 to log loop entry/exit, periodic heartbeats, and
@@ -124,7 +137,7 @@ def _popen_bash(
         stderr=subprocess.STDOUT,
         stdin=subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL,
         text=True,
-        **kwargs,
+        **{**NO_WINDOW_KWARGS, **kwargs},
     )
     if stdin_data is not None:
         _pipe_stdin(proc, stdin_data)

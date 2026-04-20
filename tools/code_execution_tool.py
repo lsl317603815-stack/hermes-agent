@@ -45,6 +45,7 @@ import time
 import uuid
 
 _IS_WINDOWS = platform.system() == "Windows"
+from tools.environments.base import NO_WINDOW_KWARGS
 from typing import Any, Dict, List, Optional
 
 # Availability gate: UDS requires a POSIX OS
@@ -1066,6 +1067,7 @@ def execute_code(
             stderr=subprocess.PIPE,
             stdin=subprocess.DEVNULL,
             preexec_fn=None if _IS_WINDOWS else os.setsid,
+            **NO_WINDOW_KWARGS,
         )
 
         # --- Poll loop: watch for exit, timeout, and interrupt ---
@@ -1365,6 +1367,7 @@ def _is_usable_python(python_path: str) -> bool:
              "import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)"],
             timeout=5,
             capture_output=True,
+            **NO_WINDOW_KWARGS,
         )
         return result.returncode == 0
     except (OSError, subprocess.TimeoutExpired, subprocess.SubprocessError):
