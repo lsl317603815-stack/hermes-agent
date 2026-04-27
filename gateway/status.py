@@ -63,7 +63,10 @@ def pid_alive(pid: int, *, treat_permission_as_alive: bool = False) -> bool:
             return treat_permission_as_alive
         except ProcessLookupError:
             return False
-        except OSError:
+        except Exception:
+            # Stock CPython on Windows raises OSError/WinError 87 for signal 0;
+            # some builds surface it as SystemError("OSError returned a result
+            # with an exception set").  Fall through to the ctypes probe.
             pass
         else:
             return True
