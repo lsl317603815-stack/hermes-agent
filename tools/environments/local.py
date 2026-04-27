@@ -351,6 +351,7 @@ class LocalEnvironment(BaseEnvironment):
         args = [bash, "-l", "-c", cmd_string] if login else [bash, "-c", cmd_string]
         run_env = _make_run_env(self.env)
 
+        popen_cwd = None if _IS_WINDOWS else self.cwd
         proc = subprocess.Popen(
             args,
             text=True,
@@ -361,7 +362,7 @@ class LocalEnvironment(BaseEnvironment):
             stderr=subprocess.STDOUT,
             stdin=subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL,
             preexec_fn=None if _IS_WINDOWS else os.setsid,
-            cwd=self.cwd,
+            cwd=popen_cwd,
             **NO_WINDOW_KWARGS,
         )
 

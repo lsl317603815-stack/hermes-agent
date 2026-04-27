@@ -488,30 +488,75 @@ class BaseEnvironment(ABC):
         decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
 
         def _drain():
-            fd = proc.stdout.fileno()
+            try:
+                fd = proc.stdout.fileno()
+            except AttributeError:
+                try:
+                    for chunk in proc.stdout:
+                        output_chunks.append(str(chunk))
+                except Exception:
+                    pass
+                return
             idle_after_exit = 0
             try:
-                while True:
-                    try:
-                        ready, _, _ = select.select([fd], [], [], 0.1)
-                    except (ValueError, OSError):
-                        break  # fd already closed
-                    if ready:
+                if os.name == "nt":
+                    import ctypes
+                    import msvcrt
+
+                    handle = msvcrt.get_osfhandle(fd)
+                    available = ctypes.c_ulong()
+                    while True:
                         try:
-                            chunk = os.read(fd, 4096)
+                            ok = ctypes.windll.kernel32.PeekNamedPipe(
+                                ctypes.c_void_p(handle),
+                                None,
+                                0,
+                                None,
+                                ctypes.byref(available),
+                                None,
+                            )
                         except (ValueError, OSError):
                             break
-                        if not chunk:
-                            break  # true EOF — all writers closed
-                        output_chunks.append(decoder.decode(chunk))
-                        idle_after_exit = 0
-                    elif proc.poll() is not None:
-                        # bash is gone and the pipe was idle for ~100ms.  Give
-                        # it two more cycles to catch any buffered tail, then
-                        # stop — otherwise we wait forever on a grandchild pipe.
-                        idle_after_exit += 1
-                        if idle_after_exit >= 3:
+                        if not ok:
                             break
+                        if available.value:
+                            try:
+                                chunk = os.read(fd, min(4096, available.value))
+                            except (ValueError, OSError):
+                                break
+                            if not chunk:
+                                break
+                            output_chunks.append(decoder.decode(chunk))
+                            idle_after_exit = 0
+                        elif proc.poll() is not None:
+                            idle_after_exit += 1
+                            if idle_after_exit >= 3:
+                                break
+                            time.sleep(0.1)
+                        else:
+                            time.sleep(0.1)
+                else:
+                    while True:
+                        try:
+                            ready, _, _ = select.select([fd], [], [], 0.1)
+                        except (ValueError, OSError):
+                            break  # fd already closed
+                        if ready:
+                            try:
+                                chunk = os.read(fd, 4096)
+                            except (ValueError, OSError):
+                                break
+                            if not chunk:
+                                break  # true EOF — all writers closed
+                            output_chunks.append(decoder.decode(chunk))
+                            idle_after_exit = 0
+                        elif proc.poll() is not None:
+                            # bash is gone and the pipe was idle for ~100ms.  Give
+                            # it two more cycles to catch any buffered tail, then
+                            # stop — otherwise we wait forever on a grandchild pipe.
+                            idle_after_exit += 1
+                            if idle_after_exit >= 3:
+                                break
             finally:
                 # Flush any bytes buffered mid-sequence.  With ``errors="replace"``
                 # this emits U+FFFD for any final incomplete sequence rather than

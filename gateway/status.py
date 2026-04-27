@@ -53,6 +53,21 @@ def pid_alive(pid: int, *, treat_permission_as_alive: bool = False) -> bool:
     browser-session ownership checks).
     """
     if _IS_WINDOWS:
+        # Preserve testability and any non-standard Windows Python behavior:
+        # if os.kill(pid, 0) has been monkeypatched (or ever starts working
+        # natively), trust it.  Stock CPython on Windows raises WinError 87
+        # for signal 0, so we fall through to the ctypes probe below.
+        try:
+            os.kill(pid, 0)
+        except PermissionError:
+            return treat_permission_as_alive
+        except ProcessLookupError:
+            return False
+        except OSError:
+            pass
+        else:
+            return True
+
         import ctypes
         PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
         ERROR_ACCESS_DENIED = 5
@@ -225,7 +240,7 @@ def _record_looks_like_gateway(record: dict[str, Any]) -> bool:
     if not isinstance(argv, list) or not argv:
         return False
 
-    cmdline = " ".join(str(part) for part in argv)
+    cmdline = " ".join(str(part) for part in argv).replace("\\", "/")
     patterns = (
         "hermes_cli.main gateway",
         "hermes_cli/main.py gateway",
@@ -283,7 +298,10 @@ def _read_pid_record(pid_path: Optional[Path] = None) -> Optional[dict]:
     if not pid_path.exists():
         return None
 
-    raw = pid_path.read_text().strip()
+    try:
+        raw = pid_path.read_text().strip()
+    except (OSError, PermissionError):
+        return None
     if not raw:
         return None
 
@@ -823,7 +841,10 @@ def get_running_pid(
         return None
 
     primary_record = _read_pid_record(resolved_pid_path)
-    fallback_record = _read_gateway_lock_record(resolved_lock_path)
+    if _gateway_lock_handle is not None and resolved_lock_path == _get_gateway_lock_path():
+        fallback_record = _build_pid_record()
+    else:
+        fallback_record = _read_gateway_lock_record(resolved_lock_path)
 
     for record in (primary_record, fallback_record):
         pid = _pid_from_record(record)
