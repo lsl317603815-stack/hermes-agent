@@ -72,3 +72,6 @@ website/static/api/skills-index.json
 
 # Claude Code local overrides (per-user, not team-shared)
 .claude/settings.local.json
+
+# Obsidian local workspace files
+.obsidian/

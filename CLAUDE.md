@@ -19,9 +19,10 @@
 
 运行时状态**不在本仓库**，在用户目录：
 
-- `C:\Users\lishaoli\.hermes\config.yaml` —— 当前 hermes 的实际配置
-- `C:\Users\lishaoli\.hermes\skills\` —— 已安装 skill（30 个类别）
-- `C:\Users\lishaoli\.hermes\auth.json` —— **含明文 OAuth token**，读可以，绝不复制到对话/提交里
+- `~/.hermes/config.yaml` —— 当前 hermes 的实际配置
+- `~/.hermes/skills/` —— 已安装 skill（30 个类别）
+- `~/.hermes/auth.json` —— **含明文 OAuth token**，读可以，绝不复制到对话/提交里
+- `~/.hermes/logs/` —— 运行日志，排错首站
 
 ---
 
@@ -54,26 +55,33 @@ git push origin main
 
 ## 环境
 
-- **OS: Windows 10**（重要）。官方 README 写 *Native Windows is not supported*，建议 WSL2。
-  - Python 侧大多能跑，但 **平台特定代码**（terminal backends、voice、signal 处理）在 Windows 原生可能炸
-  - 改这类代码前问清楚用户用什么环境跑（WSL vs 原生 Git Bash），必要时让用户在 WSL 里复现
-- venv 激活：`source venv/Scripts/activate`（Git Bash）或 `.\venv\Scripts\activate.bat`（cmd）
+- **OS: macOS（Darwin）**。本机是主力 Mac 工作环境，多数 Python 代码 native 可跑，不需要 WSL
+- **仓库路径**：`/Users/ryuka/Documents/GitHub/hermes-agent`
+- **挂载点**：`cc-connect/hermes-agent` 是指向本仓库的软链，从 cc-connect 主目录可直接进入；改文件无差别落到本仓库
+- 平台特定代码（terminal backends、voice、signal 处理）原作者主要按 Windows/Linux 测过，Mac 上偶有差异，遇到先看 `~/.hermes/logs/`
+- venv 激活：`source venv/bin/activate`（zsh/bash 通用）
 - 跑测试：按 `AGENTS.md` 的 Testing 节
-- Shell：Claude Code 默认 Git Bash，Unix 语法
+- Shell：默认 zsh，POSIX 语法
+- 后台 gateway 通过 LaunchAgent 常驻，plist 在 `~/Library/LaunchAgents/`；改 gateway 行为后用 `launchctl` 重启服务
 
+---
 
+## macOS 启动 Hermes
 
-## windows启动Hermes
+前台手动启动（终端 / iTerm）：
 
-- PowerShell
-
-```
-cd C:\Users\lishaoli\hermes-agent
-.\venv\Scripts\Activate.ps1
+```bash
+cd /Users/ryuka/Documents/GitHub/hermes-agent
+source venv/bin/activate
 hermes
 ```
 
+LaunchAgent 重启 gateway：
 
+```bash
+launchctl list | grep hermes      # 找 label
+launchctl kickstart -k gui/$(id -u)/<label>
+```
 
 ---
 
@@ -98,8 +106,8 @@ hermes
 - ❌ 不要 `git push --force` 到 `origin/main`；feature 分支可以 force-with-lease
 - ❌ 不要在代码里硬编码 `~/.hermes` —— 用 `get_hermes_home()`，见 AGENTS.md "Profiles" 节
 - ❌ 不要为了让某个测试过就改 `tests/conftest.py` 的 `_isolate_hermes_home` fixture
-- ❌ 不要在未沟通的情况下把 `venv/`、大型二进制、`logs/`、`__pycache__/` 之类的加回 git
-- ❌ 不要跨项目污染：本仓库跟 `C:\Users\lishaoli\ClaudeWork\feishu-project\` 是两套完全独立的工作，别把飞书业务的东西搬进来
+- ❌ 不要在未沟通的情况下把 `venv/`、大型二进制、`logs/`、`__pycache__/`、`.DS_Store` 之类的加回 git
+- ❌ 不要跨项目污染：本仓库跟 `/Users/ryuka/Documents/Claude/Projects/cc-connect/` 是两套完全独立的工作，别把 cc-connect / 飞书业务的东西搬进来
 
 ---
 
@@ -121,6 +129,5 @@ hermes
 
 ## 相关的其他工作区（仅供上下文，不要混）
 
-- `C:\Users\lishaoli\ClaudeWork\feishu-project\` —— 飞书项目桥，另一个 Claude Code 项目，完全独立
-- `C:\Users\lishaoli\.openclaw\` —— OpenClaw 历史残留，只做知识参考，不要复制 wrapper/hook
-
+- `/Users/ryuka/Documents/Claude/Projects/cc-connect/` —— cc-connect 桥（飞书 / 微信 ↔ Claude Code），另一个 Claude Code 工作目录，完全独立
+- 兄弟项目 `hermes短剧`、`hermes-novel` 等是基于 hermes-agent 派生的私人项目，不在本仓库内，别把私人改动落到这里
